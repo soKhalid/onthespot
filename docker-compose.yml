@@ -1,0 +1,90 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: onthespot_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: onthespot
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-secretpassword}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - onthespot
+
+  # Laravel Backend
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: onthespot_backend
+    restart: unless-stopped
+    working_dir: /var/www
+    environment:
+      - APP_ENV=${APP_ENV:-production}
+      - APP_DEBUG=${APP_DEBUG:-false}
+      - DB_CONNECTION=pgsql
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_DATABASE=onthespot
+      - DB_USERNAME=postgres
+      - DB_PASSWORD=${DB_PASSWORD:-secretpassword}
+    ports:
+      - "8000:8000"
+    depends_on:
+      - postgres
+    volumes:
+      - ./backend:/var/www
+      - backend_storage:/var/www/storage
+    networks:
+      - onthespot
+    command: php artisan serve --host=0.0.0.0 --port=8000
+
+  # Vue.js Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: onthespot_frontend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    environment:
+      - VITE_API_URL=http://backend:8000/api
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    networks:
+      - onthespot
+
+  # Nginx Reverse Proxy
+  nginx:
+    image: nginx:alpine
+    container_name: onthespot_nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./nginx/ssl:/etc/nginx/ssl
+    depends_on:
+      - backend
+      - frontend
+    networks:
+      - onthespot
+
+networks:
+  onthespot:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  backend_storage:
